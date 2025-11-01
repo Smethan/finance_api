@@ -33,31 +33,10 @@ health_check() {
     }
 }
 
-find_codex_cli() {
-    if [[ -n "${CODEX_BIN:-}" ]]; then
-        if command -v "${CODEX_BIN}" >/dev/null 2>&1; then
-            CODEX_BIN="$(command -v "${CODEX_BIN}")"
-            return
-        elif [[ -x "${CODEX_BIN}" ]]; then
-            return
-        fi
-        log "specified CODEX_BIN '${CODEX_BIN}' is not executable"
-        exit 1
-    fi
-
-    if command -v codex >/dev/null 2>&1; then
-        CODEX_BIN="$(command -v codex)"
-        return
-    fi
-
-    log "codex CLI not found on PATH; skipping registration check"
-    CODEX_BIN=""
-}
-
-verify_registration() {
-    [[ -z "${CODEX_BIN}" ]] && return
-    if ! "${CODEX_BIN}" mcp get background_job >/dev/null 2>&1; then
-        log "warning: background_job MCP server not registered; rerun setup.sh"
+check_codex_config() {
+    local config_file="${HOME}/.codex/config.toml"
+    if [[ ! -f "${config_file}" ]] || ! grep -q '^\[mcp_servers\.background_job\]' "${config_file}" >/dev/null 2>&1; then
+        log "warning: background_job entry missing from ${config_file}; rerun setup.sh"
     fi
 }
 
@@ -65,8 +44,7 @@ main() {
     require_uv
     refresh_background_job
     health_check
-    find_codex_cli
-    verify_registration
+    check_codex_config
     log "maintenance complete"
 }
 

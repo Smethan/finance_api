@@ -56,42 +56,6 @@ print(f"mcp-background-job ready (version: {version})")
 PY
 }
 
-find_codex_cli() {
-    if [[ -n "${CODEX_BIN:-}" ]]; then
-        if command -v "${CODEX_BIN}" >/dev/null 2>&1; then
-            CODEX_BIN="$(command -v "${CODEX_BIN}")"
-            log "using codex CLI from ${CODEX_BIN}"
-            return
-        elif [[ -x "${CODEX_BIN}" ]]; then
-            log "using codex CLI from ${CODEX_BIN}"
-            return
-        fi
-        log "specified CODEX_BIN '${CODEX_BIN}' is not executable"
-        exit 1
-    fi
-
-    if command -v codex >/dev/null 2>&1; then
-        CODEX_BIN="$(command -v codex)"
-        log "codex CLI detected at ${CODEX_BIN}"
-        return
-    fi
-
-    log "codex CLI not found on PATH. Install Codex CLI or set CODEX_BIN before running setup."
-    exit 1
-}
-
-register_background_job_server() {
-    local server_name="background_job"
-
-    if "${CODEX_BIN}" mcp get "${server_name}" >/dev/null 2>&1; then
-        log "existing MCP server '${server_name}' found; refreshing configuration"
-        "${CODEX_BIN}" mcp remove "${server_name}"
-    fi
-
-    "${CODEX_BIN}" mcp add "${server_name}" uvx mcp-background-job
-    log "registered '${server_name}' MCP server (command=uvx, args=[mcp-background-job])"
-}
-
 ensure_system_packages() {
     # The codex-universal base image (https://github.com/openai/codex-universal)
     # preinstalls many developer dependencies, but we ensure the essentials
@@ -119,14 +83,34 @@ ensure_system_packages() {
     "${apt_cmd[@]}" clean
 }
 
+ensure_codex_config() {
+    local config_dir="${HOME}/.codex"
+    local config_file="${config_dir}/config.toml"
+    local server_block=$'[mcp_servers.background_job]\ncommand = "uvx"\nargs = ["mcp-background-job"]\ntransport = "stdio"\n'
+
+    mkdir -p "${config_dir}"
+
+    if [[ -f "${config_file}" ]] && grep -q '^\[mcp_servers\.background_job\]' "${config_file}"; then
+        log "codex config already defines mcp_servers.background_job; skipping update"
+        return
+    fi
+
+    if [[ -f "${config_file}" && -s "${config_file}" ]]; then
+        printf '\n%s\n' "${server_block}" >> "${config_file}"
+    else
+        printf '%s\n' "${server_block}" > "${config_file}"
+    fi
+
+    log "appended mcp_servers.background_job entry to ${config_file}"
+}
+
 main() {
     log "starting Codex Cloud setup"
     ensure_paths
     ensure_local_bin_on_path
     install_uv
     prefetch_background_job
-    find_codex_cli
-    register_background_job_server
+    ensure_codex_config
     log "setup complete"
 }
 
