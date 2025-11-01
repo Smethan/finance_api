@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import json
 from typing import Dict
 
 from loguru import logger
@@ -21,6 +22,7 @@ from app.services.repositories import (
     SecurityRepository,
     TransactionRepository,
 )
+from plaid.exceptions import ApiException
 
 
 @dataclass
@@ -62,13 +64,21 @@ class SyncOrchestrator:
             has_more = sync_result.has_more
             total_transactions += len(sync_result.transactions)
 
-        holdings_payload = await self.plaid.investments_holdings(access_token)
-        security_map = await self.securities.bulk_upsert(holdings_payload["securities"])
-        await self.holdings.bulk_upsert(
-            holdings_payload["holdings"],
-            plaid_account_id_map=account_map,
-            plaid_security_id_map=security_map,
-        )
+        holdings_payload = await self._fetch_investments_holdings(str(item.id), access_token)
+        securities = holdings_payload.get("securities", [])
+        holdings = holdings_payload.get("holdings", [])
+
+        if securities:
+            security_map = await self.securities.bulk_upsert(securities)
+        else:
+            security_map = {}
+
+        if holdings and security_map:
+            await self.holdings.bulk_upsert(
+                holdings,
+                plaid_account_id_map=account_map,
+                plaid_security_id_map=security_map,
+            )
 
         await self.items.update_cursor(
             item_id=str(item.id),
@@ -115,3 +125,31 @@ class SyncOrchestrator:
         stmt = select(Account.plaid_account_id, Account.id).where(Account.item_id == item_id)
         result = await self.session.execute(stmt)
         return {row.plaid_account_id: str(row.id) for row in result}
+
+    async def _fetch_investments_holdings(self, item_id: str, access_token: str) -> Dict[str, list]:
+        try:
+            return await self.plaid.investments_holdings(access_token)
+        except ApiException as exc:
+            plaid_error = self._extract_plaid_error(exc)
+            if plaid_error and plaid_error.get("error_code") == "PRODUCT_NOT_ENABLED":
+                logger.info(
+                    "Skipping investments sync for item %s: %s",
+                    item_id,
+                    plaid_error.get("error_message", exc.reason),
+                )
+                return {"securities": [], "holdings": []}
+
+            logger.exception("Failed to fetch investments holdings for item %s", item_id)
+            raise
+
+    @staticmethod
+    def _extract_plaid_error(exc: ApiException) -> Dict[str, str] | None:
+        body = getattr(exc, "body", None)
+        if not body:
+            return None
+        try:
+            if isinstance(body, (bytes, bytearray)):
+                body = body.decode()
+            return json.loads(body)
+        except json.JSONDecodeError:
+            return None
