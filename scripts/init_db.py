@@ -1,6 +1,7 @@
 import asyncio
 
 from app.core.database import Base, engine
+from app import models  # noqa: F401  Ensures model metadata is registered
 
 
 async def init_models() -> None:

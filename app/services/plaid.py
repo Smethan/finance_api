@@ -14,13 +14,16 @@ from plaid.model.link_token_create_request import LinkTokenCreateRequest
 from plaid.model.link_token_create_request_user import LinkTokenCreateRequestUser
 from plaid.model.products import Products
 from plaid.model.transactions_sync_request import TransactionsSyncRequest
+from plaid.model.sandbox_public_token_create_request import (
+    SandboxPublicTokenCreateRequest,
+)
 
 from app.core.settings import settings
 
 
 PLAID_ENVIRONMENTS: dict[str, str] = {
     "sandbox": plaid.Environment.Sandbox,
-    "development": plaid.Environment.Development,
+    "development": getattr(plaid.Environment, "Development", plaid.Environment.Production),
     "production": plaid.Environment.Production,
 }
 
@@ -113,6 +116,20 @@ class PlaidService:
         request = InvestmentsHoldingsGetRequest(access_token=access_token)
         response = await self._call("investments_holdings_get", request)
         return response.to_dict()
+
+    async def sandbox_public_token_create(
+        self,
+        institution_id: str,
+        initial_products: Iterable[str],
+        options: Dict[str, Any] | None = None,
+    ) -> str:
+        request = SandboxPublicTokenCreateRequest(
+            institution_id=institution_id,
+            initial_products=[Products(prod) for prod in initial_products],
+            options=options,
+        )
+        response = await self._call("sandbox_public_token_create", request)
+        return response["public_token"]
 
 
 plaid_service = PlaidService()

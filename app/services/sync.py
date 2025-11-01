@@ -47,20 +47,20 @@ class SyncOrchestrator:
         access_token = decrypt_string(item.access_token_encrypted)
         cursor = item.cursor
 
+        accounts_payload = await self.plaid.accounts_balance(access_token)
+        await self.accounts.bulk_upsert(accounts_payload["accounts"], str(item.id))
+        account_map = await self._account_map(item.id)
+
         total_transactions = 0
         has_more = True
         latest_cursor = cursor
 
         while has_more:
             sync_result = await self._sync_transactions(access_token=access_token, cursor=latest_cursor)
-            await self._persist_transactions(item, sync_result)
+            await self._persist_transactions(item, sync_result, account_map)
             latest_cursor = sync_result.next_cursor
             has_more = sync_result.has_more
             total_transactions += len(sync_result.transactions)
-
-        accounts_payload = await self.plaid.accounts_balance(access_token)
-        await self.accounts.bulk_upsert(accounts_payload["accounts"], str(item.id))
-        account_map = await self._account_map(item.id)
 
         holdings_payload = await self.plaid.investments_holdings(access_token)
         security_map = await self.securities.bulk_upsert(holdings_payload["securities"])
@@ -98,10 +98,17 @@ class SyncOrchestrator:
     async def _sync_transactions(self, access_token: str, cursor: str | None) -> SyncResult:
         return await self.plaid.transactions_sync(access_token, cursor)
 
-    async def _persist_transactions(self, item: Item, sync_result: SyncResult) -> None:
+    async def _persist_transactions(
+        self,
+        item: Item,
+        sync_result: SyncResult,
+        account_map: Dict[str, str],
+    ) -> None:
         if sync_result.accounts:
             await self.accounts.bulk_upsert(sync_result.accounts, str(item.id))
-        account_map = await self._account_map(item.id)
+        if sync_result.accounts:
+            account_map.clear()
+            account_map.update(await self._account_map(item.id))
         await self.transactions.bulk_upsert(sync_result.transactions, plaid_account_id_map=account_map)
 
     async def _account_map(self, item_id: str) -> Dict[str, str]:

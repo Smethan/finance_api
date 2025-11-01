@@ -2,6 +2,7 @@ from app.schemas.account import AccountBase, AccountDetail
 from app.schemas.analytics import CashflowResponse, NetWorthHistoryPoint, NetWorthResponse
 from app.schemas.balance import NetWorthSnapshot
 from app.schemas.holding import HoldingSummary
+from app.schemas.item import ItemRead
 from app.schemas.security import SecuritySummary
 from app.schemas.sync import SyncStatus
 from app.schemas.transaction import TransactionDetail, TransactionSummary
@@ -15,6 +16,7 @@ __all__ = [
     "NetWorthHistoryPoint",
     "CashflowResponse",
     "HoldingSummary",
+    "ItemRead",
     "SecuritySummary",
     "SyncStatus",
     "TransactionSummary",
