@@ -5,6 +5,9 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+
 log() {
     printf '[setup] %s\n' "$*" >&2
 }
@@ -104,6 +107,17 @@ ensure_codex_config() {
     log "appended mcp_servers.background_job entry to ${config_file}"
 }
 
+install_project_dependencies() {
+    if [[ ! -f "${REPO_ROOT}/pyproject.toml" ]]; then
+        log "pyproject.toml not found at ${REPO_ROOT}; skipping project dependency install"
+        return
+    fi
+
+    log "installing Python project dependencies via uv (pyproject.toml)"
+    UV_LINK_MODE=copy uv pip install --system "${REPO_ROOT}"
+    log "project dependencies installed"
+}
+
 main() {
     log "starting Codex Cloud setup"
     ensure_paths
@@ -111,6 +125,7 @@ main() {
     install_uv
     prefetch_background_job
     ensure_codex_config
+    install_project_dependencies
     log "setup complete"
 }
 
